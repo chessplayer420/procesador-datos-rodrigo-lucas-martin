@@ -1,0 +1,17 @@
+[project]
+name = "procesador-datos-rodrigo-lucas-martin"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "rodrigo_mariño", email = "rodrigo.marino.alvarez@udc.es" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+procesador-datos-rodrigo-lucas-martin = "procesador_datos_rodrigo_lucas_martin:main"
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"

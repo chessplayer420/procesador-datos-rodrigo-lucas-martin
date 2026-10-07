@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Entorno virtual de uv
+.venv/
+
+# Carpeta de datos (Prohibido subir datasets)
+data/
+
