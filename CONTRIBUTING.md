@@ -25,3 +25,10 @@ Usa mensajes descriptivos y un prefijo que indique el tipo de trabajo: `feat:`, 
 ## Gestión de Dependencias con uv
 - Para añadir un paquete nuevo al proyecto usar **siempre**: `uv add <paquete>`.
 - El archivo `uv.lock` debe incluirse siempre en los commits.
+
+## Reglas de fusión (Merge)
+Antes de fusionar cualquier rama a dev (o dev a main), el desarrollador debe actualizar su rama con los últimos cambios de dev y ejecutar todas las pruebas en su máquina local. Solo se fusiona si todas las pruebas pasan.
+
+## Instrucciones de ejecución de pruebas
+Las pruebas automatizadas del proyecto se ejecutan desde la raíz del repositorio con el comando:
+
