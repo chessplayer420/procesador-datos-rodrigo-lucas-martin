@@ -161,7 +161,7 @@ class KivyPOCApp(App):
             title="Resultado",
             content=Label(text=message),
             size_hint=(0.8, 0.35),
-        ).open()
+        ).open() 
 
 
 if __name__ == "__main__":
