@@ -7,7 +7,9 @@ authors = [
     { name = "rodrigo_mariño", email = "rodrigo.marino.alvarez@udc.es" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "kivy>=2.3.1",
+]
 
 [project.scripts]
 procesador-datos-rodrigo-lucas-martin = "procesador_datos_rodrigo_lucas_martin:main"
