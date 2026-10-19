@@ -7,7 +7,10 @@ authors = [
     { name = "rodrigo_mariño", email = "rodrigo.marino.alvarez@udc.es" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "openpyxl>=3.1.5",
+    "pandas>=3.0.6",
+]
 
 [project.scripts]
 procesador-datos-rodrigo-lucas-martin = "procesador_datos_rodrigo_lucas_martin:main"
