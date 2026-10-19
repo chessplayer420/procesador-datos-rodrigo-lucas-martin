@@ -7,7 +7,11 @@ authors = [
     { name = "rodrigo_mariño", email = "rodrigo.marino.alvarez@udc.es" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "matplotlib>=3.11.2",
+    "pandas>=3.0.6",
+    "pyside6>=6.12.0",
+]
 
 [project.scripts]
 procesador-datos-rodrigo-lucas-martin = "procesador_datos_rodrigo_lucas_martin:main"
