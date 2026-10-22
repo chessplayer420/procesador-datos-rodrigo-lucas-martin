@@ -31,3 +31,12 @@ def test_error_constante_no_numerica(datasets_ejemplo):
     train, test = datasets_ejemplo
     with pytest.raises(ValueError, match="número válido"):
         tratar_valores_inexistentes(train, test, ["num"], "constante", valor_constante="texto_invalido")
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    df_tr = pd.DataFrame({"x": [1.0, 2.0, np.nan, 4.0]})
+    df_te = pd.DataFrame({"x": [np.nan, 3.0]})
+    win = VentanaPreprocesado(df_tr, df_te, ["x"])
+    win.show()
+    sys.exit(app.exec())
