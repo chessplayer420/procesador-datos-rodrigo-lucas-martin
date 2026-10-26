@@ -5,10 +5,14 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QFileDialog, QTableWidget, QTableWidgetItem,
     QLineEdit, QMessageBox, QHeaderView, QLabel, QListWidget,
-    QComboBox, QAbstractItemView
+    QComboBox, QAbstractItemView, QGroupBox
 )
 
-from preprocesado import validar_seleccion_columnas
+from preprocesado import (
+    validar_seleccion_columnas,
+    detectar_valores_inexistentes,
+    tratar_valores_inexistentes
+)
 from importacion import importar_datos
 
 
@@ -16,10 +20,12 @@ class VentanaCargaDatos(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Carga y Visualización de Datasets")
-        self.resize(900, 600)
+        self.resize(900, 750)
 
-        # Estado global para mantener los datos disponibles en los siguientes pasos
+        # Estado global para mantener los datos disponibles
         self.df_cargado: pd.DataFrame = None
+        self.df_train: pd.DataFrame = None
+        self.df_test: pd.DataFrame = None
         self.ruta_archivo_actual: str = ""
         self.features_confirmadas: list = []
         self.target_confirmado: str = ""
@@ -28,7 +34,7 @@ class VentanaCargaDatos(QMainWindow):
         self.setCentralWidget(widget_central)
         layout_principal = QVBoxLayout(widget_central)
 
-        # Botón y campo de texto para mostrar la ruta absoluta
+        # 1. Carga de archivo
         layout_superior = QHBoxLayout()
         self.btn_cargar = QPushButton("Cargar Dataset")
         self.btn_cargar.clicked.connect(self.seleccionar_y_cargar_archivo)
@@ -41,23 +47,20 @@ class VentanaCargaDatos(QMainWindow):
         layout_superior.addWidget(self.input_ruta)
         layout_principal.addLayout(layout_superior)
 
-        # Tabla con scroll horizontal y vertical
+        # 2. Tabla de visualización
         self.tabla_datos = QTableWidget()
         layout_principal.addWidget(self.tabla_datos)
 
-        # Seleccion de columnas de entrada (features) y salida (target)
+        # 3. Selección de columnas (Features / Target)
         layout_seleccion = QHBoxLayout()
 
-        # Selector de Features (Entrada)
         layout_features = QVBoxLayout()
         self.lbl_features = QLabel("Columnas de entrada (Features):")
         self.lista_features = QListWidget()
-        # Permitir selección múltiple
         self.lista_features.setSelectionMode(QAbstractItemView.MultiSelection)
         layout_features.addWidget(self.lbl_features)
         layout_features.addWidget(self.lista_features)
 
-        # Selector de Target (Salida)
         layout_target = QVBoxLayout()
         self.lbl_target = QLabel("Columna de salida (Target):")
         self.combo_target = QComboBox()
@@ -69,10 +72,160 @@ class VentanaCargaDatos(QMainWindow):
         layout_seleccion.addLayout(layout_target)
         layout_principal.addLayout(layout_seleccion)
 
-        # Botón Confirmar Selección
         self.btn_confirmar = QPushButton("Confirmar selección")
         self.btn_confirmar.clicked.connect(self.confirmar_seleccion_columnas)
         layout_principal.addWidget(self.btn_confirmar)
+
+        # -------------------------------------------------------------
+        # TAREA 2: Conexión de Lógica y Control de Errores de Preprocesado
+        # -------------------------------------------------------------
+        group_preprocesado = QGroupBox("Tratamiento de Valores Inexistentes (NaN)")
+        layout_prep = QVBoxLayout()
+
+        # Detección e información de nulos
+        self.lbl_reporte_nulos = QLabel("Estado: Pendiente de separación en Train/Test")
+        self.lbl_reporte_nulos.setWordWrap(True)
+        layout_prep.addWidget(self.lbl_reporte_nulos)
+
+        # Opciones de tratamiento
+        layout_estrategia = QHBoxLayout()
+        lbl_est = QLabel("Estrategia:")
+        self.combo_estrategia = QComboBox()
+        self.combo_estrategia.addItems([
+            "Eliminar filas con valores inexistentes",
+            "Rellenar con la media",
+            "Rellenar con la mediana",
+            "Rellenar con valor constante"
+        ])
+        self.combo_estrategia.currentIndexChanged.connect(self.al_cambiar_estrategia)
+
+        self.input_constante = QLineEdit()
+        self.input_constante.setPlaceholderText("Valor constante (ej. 0)")
+        self.input_constante.setEnabled(False)
+
+        layout_estrategia.addWidget(lbl_est)
+        layout_estrategia.addWidget(self.combo_estrategia)
+        layout_estrategia.addWidget(self.input_constante)
+        layout_prep.addLayout(layout_estrategia)
+
+        # Botón aplicar preprocesado (conectado a ejecutar_preprocesado)
+        self.btn_aplicar_preprocesado = QPushButton("Aplicar preprocesado")
+        self.btn_aplicar_preprocesado.setEnabled(False)
+        self.btn_aplicar_preprocesado.clicked.connect(self.ejecutar_preprocesado)
+        layout_prep.addWidget(self.btn_aplicar_preprocesado)
+
+        group_preprocesado.setLayout(layout_prep)
+        layout_principal.addWidget(group_preprocesado)
+
+    def al_cambiar_estrategia(self, index: int):
+        """Habilita el campo constante solo cuando se elige la opción 3 (Valor constante)."""
+        self.input_constante.setEnabled(index == 3)
+
+    def actualizar_reporte_nulos(self):
+        """Muestra el reporte de nulos por columna en Train y Test."""
+        if self.df_train is None or self.df_test is None:
+            self.lbl_reporte_nulos.setText("Estado: Pendiente de separación en Train/Test.")
+            self.btn_aplicar_preprocesado.setEnabled(False)
+            return
+
+        columnas_evaluar = self.features_confirmadas + ([self.target_confirmado] if self.target_confirmado else [])
+        if not columnas_evaluar:
+            self.lbl_reporte_nulos.setText("Selecciona y confirma las columnas primero.")
+            self.btn_aplicar_preprocesado.setEnabled(False)
+            return
+
+        reporte_train, reporte_test = detectar_valores_inexistentes(
+            self.df_train, self.df_test, columnas_evaluar
+        )
+
+        total_nulos_train = sum(reporte_train.values())
+        total_nulos_test = sum(reporte_test.values())
+
+        if total_nulos_train == 0 and total_nulos_test == 0:
+            self.lbl_reporte_nulos.setText("No hay valores inexistentes en las columnas seleccionadas. Puedes continuar sin preprocesar.")
+            self.btn_aplicar_preprocesado.setEnabled(False)
+        else:
+            txt = f"<b>Valores inexistentes detectados:</b><br>"
+            txt += f"• <b>Entrenamiento (Train):</b> {reporte_train}<br>"
+            txt += f"• <b>Prueba (Test):</b> {reporte_test}"
+            self.lbl_reporte_nulos.setText(txt)
+            self.btn_aplicar_preprocesado.setEnabled(True)
+
+    def ejecutar_preprocesado(self):
+        """Ejecuta la estrategia de tratamiento de nulos seleccionada."""
+        if self.df_train is None or self.df_test is None:
+            QMessageBox.warning(self, "Aviso", "No existen los conjuntos de Entrenamiento y Test.")
+            return
+
+        columnas_evaluar = self.features_confirmadas + ([self.target_confirmado] if self.target_confirmado else [])
+        if not columnas_evaluar:
+            QMessageBox.warning(self, "Aviso", "Debes confirmar las columnas a evaluar.")
+            return
+
+        # Mapeo del selector a nombres de estrategia
+        estrategias_map = {
+            0: "eliminar",
+            1: "media",
+            2: "mediana",
+            3: "constante"
+        }
+        idx = self.combo_estrategia.currentIndex()
+        estrategia = estrategias_map.get(idx, "eliminar")
+
+        valor_constante = None
+        if estrategia == "constante":
+            texto_constante = self.input_constante.text().strip()
+            if not texto_constante:
+                QMessageBox.warning(self, "Error de Entrada", "Debes introducir un valor constante.")
+                return
+            try:
+                valor_constante = float(texto_constante)
+            except ValueError:
+                QMessageBox.critical(
+                    self,
+                    "Error de Tipo",
+                    "El valor constante introducido debe ser un número válido."
+                )
+                return
+
+        filas_train_antes = len(self.df_train)
+        filas_test_antes = len(self.df_test)
+
+        try:
+            df_train_limpio, df_test_limpio = tratar_valores_inexistentes(
+                self.df_train,
+                self.df_test,
+                columnas_evaluar,
+                estrategia,
+                valor_constante
+            )
+
+            # Comprobar que no se hayan vaciado los conjuntos al eliminar filas
+            if df_train_limpio.empty or df_test_limpio.empty:
+                QMessageBox.warning(
+                    self,
+                    "Operación Cancelada",
+                    "La eliminación de filas dejaría vacío el conjunto de Entrenamiento o Test. Cambia de estrategia."
+                )
+                return
+
+            # Actualizar estado interno
+            self.df_train = df_train_limpio
+            self.df_test = df_test_limpio
+
+            # Generar mensaje de éxito
+            if estrategia == "eliminar":
+                diff_train = filas_train_antes - len(self.df_train)
+                diff_test = filas_test_antes - len(self.df_test)
+                msg = f"Se han eliminado {diff_train} filas en Train y {diff_test} filas en Test."
+            else:
+                msg = f"Valores inexistentes rellenados correctamente usando la estrategia '{estrategia}'."
+
+            QMessageBox.information(self, "Preprocesado Exitoso", msg)
+            self.actualizar_reporte_nulos()
+
+        except Exception as err:
+            QMessageBox.critical(self, "Error en Preprocesado", f"Ocurrió un error al procesar:\n{str(err)}")
 
     def seleccionar_y_cargar_archivo(self):
         filtro_extensiones = (
@@ -91,8 +244,6 @@ class VentanaCargaDatos(QMainWindow):
 
         try:
             ruta_absoluta = os.path.abspath(ruta_seleccionada)
-            
-            # Delegación al módulo de importación
             df_nuevo = importar_datos(ruta_absoluta)
 
             self.df_cargado = df_nuevo
@@ -100,8 +251,8 @@ class VentanaCargaDatos(QMainWindow):
             self.input_ruta.setText(self.ruta_archivo_actual)
 
             self.mostrar_dataframe_en_tabla(self.df_cargado)
-
             self.actualizar_selectores_columnas(self.df_cargado)
+            self.actualizar_reporte_nulos()
 
         except Exception as error:
             QMessageBox.critical(
@@ -126,7 +277,6 @@ class VentanaCargaDatos(QMainWindow):
         self.tabla_datos.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
 
     def actualizar_selectores_columnas(self, df: pd.DataFrame):
-        """Actualiza los selectores con las columnas del dataset y resetea selecciones previas."""
         self.lista_features.clear()
         self.combo_target.clear()
         self.features_confirmadas = []
@@ -136,26 +286,20 @@ class VentanaCargaDatos(QMainWindow):
             return
 
         columnas = [str(col) for col in df.columns]
-        
-        # Poblar lista de features y combo de target
         self.lista_features.addItems(columnas)
         self.combo_target.addItem("-- Seleccionar salida --")
         self.combo_target.addItems(columnas)
 
     def confirmar_seleccion_columnas(self):
-        """Lee los elementos seleccionados en la GUI y valida con la función independiente."""
         if self.df_cargado is None:
             QMessageBox.warning(self, "Error", "Primero debes cargar un dataset.")
             return
 
-        # Obtener las columnas seleccionadas en la GUI
         features_seleccionadas = [item.text() for item in self.lista_features.selectedItems()]
-        
         target_seleccionado = self.combo_target.currentText()
         if target_seleccionado == "-- Seleccionar salida --":
             target_seleccionado = ""
 
-        # Delegar la validación a la lógica pura
         es_valido, mensaje = validar_seleccion_columnas(
             self.df_cargado,
             features_seleccionadas,
@@ -166,6 +310,7 @@ class VentanaCargaDatos(QMainWindow):
             self.features_confirmadas = features_seleccionadas
             self.target_confirmado = target_seleccionado
             QMessageBox.information(self, "Selección Confirmada", mensaje)
+            self.actualizar_reporte_nulos()
         else:
             QMessageBox.warning(self, "Error en Selección", mensaje)
 
