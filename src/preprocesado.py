@@ -1,5 +1,5 @@
 import pandas as pd
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, List
 
 
 def detectar_valores_inexistentes(
@@ -77,3 +77,45 @@ def tratar_valores_inexistentes(
 
     # Devuelve los 3 elementos necesarios para que los tests los desempaqueten
     return train_clean, test_clean, resumen
+
+def validar_seleccion_columnas(
+    df: pd.DataFrame, 
+    features: List[str], 
+    target: str) -> Tuple[bool, str]:
+    """
+    Valida la selección de columnas de entrada (features) y salida (target).
+    
+    Retorna:
+        (True, mensaje_éxito) si la selección cumple todos los requisitos.
+        (False, mensaje_error) si falla alguna validación.
+    """
+    # 1. Comprobar selecciones vacías
+    if not features:
+        return False, "Debes seleccionar al menos una columna de entrada (feature)."
+    if not target:
+        return False, "Debes seleccionar una columna de salida (target)."
+
+    # 2. Entrada y salida no pueden coincidir
+    if target in features:
+        return False, f"La columna objetivo '{target}' no puede ser seleccionada también como columna de entrada."
+
+    # 3. Comprobar existencia de columnas en el DataFrame
+    columnas_faltantes = [col for col in features + [target] if col not in df.columns]
+    if columnas_faltantes:
+        return False, f"Las siguientes columnas no existen en el dataset: {', '.join(columnas_faltantes)}"
+
+    # 4. Comprobar tipos numéricos
+    columnas_no_numericas = [
+        col for col in features + [target] if not pd.api.types.is_numeric_dtype(df[col])
+    ]
+
+    if columnas_no_numericas:
+        cols_str = ", ".join(columnas_no_numericas)
+        return False, f"Las siguientes columnas no son numéricas y no se pueden usar en el modelo de regresión: {cols_str}"
+
+    msg = (
+        f"Selección confirmada correctamente.\n"
+        f"Columnas de entrada: {', '.join(features)}\n"
+        f"Columna de salida: {target}"
+    )
+    return True, msg
