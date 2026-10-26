@@ -8,7 +8,11 @@ from PySide6.QtWidgets import (
     QComboBox, QAbstractItemView, QGroupBox
 )
 
-from preprocesado import validar_seleccion_columnas, detectar_valores_inexistentes
+from preprocesado import (
+    validar_seleccion_columnas,
+    detectar_valores_inexistentes,
+    tratar_valores_inexistentes
+)
 from importacion import importar_datos
 
 
@@ -73,7 +77,7 @@ class VentanaCargaDatos(QMainWindow):
         layout_principal.addWidget(self.btn_confirmar)
 
         # -------------------------------------------------------------
-        # TAREA 1: Panel de Tratamiento de Valores Inexistentes (NaN)
+        # TAREA 2: Conexión de Lógica y Control de Errores de Preprocesado
         # -------------------------------------------------------------
         group_preprocesado = QGroupBox("Tratamiento de Valores Inexistentes (NaN)")
         layout_prep = QVBoxLayout()
@@ -104,9 +108,10 @@ class VentanaCargaDatos(QMainWindow):
         layout_estrategia.addWidget(self.input_constante)
         layout_prep.addLayout(layout_estrategia)
 
-        # Botón aplicar preprocesado (deshabilitado por defecto)
+        # Botón aplicar preprocesado (conectado a ejecutar_preprocesado)
         self.btn_aplicar_preprocesado = QPushButton("Aplicar preprocesado")
         self.btn_aplicar_preprocesado.setEnabled(False)
+        self.btn_aplicar_preprocesado.clicked.connect(self.ejecutar_preprocesado)
         layout_prep.addWidget(self.btn_aplicar_preprocesado)
 
         group_preprocesado.setLayout(layout_prep)
@@ -145,6 +150,82 @@ class VentanaCargaDatos(QMainWindow):
             txt += f"• <b>Prueba (Test):</b> {reporte_test}"
             self.lbl_reporte_nulos.setText(txt)
             self.btn_aplicar_preprocesado.setEnabled(True)
+
+    def ejecutar_preprocesado(self):
+        """Ejecuta la estrategia de tratamiento de nulos seleccionada."""
+        if self.df_train is None or self.df_test is None:
+            QMessageBox.warning(self, "Aviso", "No existen los conjuntos de Entrenamiento y Test.")
+            return
+
+        columnas_evaluar = self.features_confirmadas + ([self.target_confirmado] if self.target_confirmado else [])
+        if not columnas_evaluar:
+            QMessageBox.warning(self, "Aviso", "Debes confirmar las columnas a evaluar.")
+            return
+
+        # Mapeo del selector a nombres de estrategia
+        estrategias_map = {
+            0: "eliminar",
+            1: "media",
+            2: "mediana",
+            3: "constante"
+        }
+        idx = self.combo_estrategia.currentIndex()
+        estrategia = estrategias_map.get(idx, "eliminar")
+
+        valor_constante = None
+        if estrategia == "constante":
+            texto_constante = self.input_constante.text().strip()
+            if not texto_constante:
+                QMessageBox.warning(self, "Error de Entrada", "Debes introducir un valor constante.")
+                return
+            try:
+                valor_constante = float(texto_constante)
+            except ValueError:
+                QMessageBox.critical(
+                    self,
+                    "Error de Tipo",
+                    "El valor constante introducido debe ser un número válido."
+                )
+                return
+
+        filas_train_antes = len(self.df_train)
+        filas_test_antes = len(self.df_test)
+
+        try:
+            df_train_limpio, df_test_limpio = tratar_valores_inexistentes(
+                self.df_train,
+                self.df_test,
+                columnas_evaluar,
+                estrategia,
+                valor_constante
+            )
+
+            # Comprobar que no se hayan vaciado los conjuntos al eliminar filas
+            if df_train_limpio.empty or df_test_limpio.empty:
+                QMessageBox.warning(
+                    self,
+                    "Operación Cancelada",
+                    "La eliminación de filas dejaría vacío el conjunto de Entrenamiento o Test. Cambia de estrategia."
+                )
+                return
+
+            # Actualizar estado interno
+            self.df_train = df_train_limpio
+            self.df_test = df_test_limpio
+
+            # Generar mensaje de éxito
+            if estrategia == "eliminar":
+                diff_train = filas_train_antes - len(self.df_train)
+                diff_test = filas_test_antes - len(self.df_test)
+                msg = f"Se han eliminado {diff_train} filas en Train y {diff_test} filas en Test."
+            else:
+                msg = f"Valores inexistentes rellenados correctamente usando la estrategia '{estrategia}'."
+
+            QMessageBox.information(self, "Preprocesado Exitoso", msg)
+            self.actualizar_reporte_nulos()
+
+        except Exception as err:
+            QMessageBox.critical(self, "Error en Preprocesado", f"Ocurrió un error al procesar:\n{str(err)}")
 
     def seleccionar_y_cargar_archivo(self):
         filtro_extensiones = (
