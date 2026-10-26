@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QMessageBox, QHeaderView
 )
 
-from src.importacion import cargar_dataset
+from importacion import importar_datos
 
 
 class VentanaCargaDatos(QMainWindow):
@@ -60,7 +60,7 @@ class VentanaCargaDatos(QMainWindow):
             ruta_absoluta = os.path.abspath(ruta_seleccionada)
             
             # Delegación al módulo de importación
-            df_nuevo = cargar_dataset(ruta_absoluta)
+            df_nuevo = importar_datos(ruta_absoluta)
 
             self.df_cargado = df_nuevo
             self.ruta_archivo_actual = ruta_absoluta
