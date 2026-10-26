@@ -276,6 +276,50 @@ class VentanaCargaDatos(QMainWindow):
 
         self.tabla_datos.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
 
+    def actualizar_selectores_columnas(self, df: pd.DataFrame):
+        """Actualiza los selectores con las columnas del dataset y resetea selecciones previas."""
+        self.lista_features.clear()
+        self.combo_target.clear()
+        self.features_confirmadas = []
+        self.target_confirmado = ""
+
+        if df is None or df.empty:
+            return
+
+        columnas = [str(col) for col in df.columns]
+        
+        # Poblar lista de features y combo de target
+        self.lista_features.addItems(columnas)
+        self.combo_target.addItem("-- Seleccionar salida --")
+        self.combo_target.addItems(columnas)
+
+    def confirmar_seleccion_columnas(self):
+        """Lee los elementos seleccionados en la GUI y valida con la función independiente."""
+        if self.df_cargado is None:
+            QMessageBox.warning(self, "Error", "Primero debes cargar un dataset.")
+            return
+
+        # Obtener las columnas seleccionadas en la GUI
+        features_seleccionadas = [item.text() for item in self.lista_features.selectedItems()]
+        
+        target_seleccionado = self.combo_target.currentText()
+        if target_seleccionado == "-- Seleccionar salida --":
+            target_seleccionado = ""
+
+        # Delegar la validación a la lógica pura
+        es_valido, mensaje = validar_seleccion_columnas(
+            self.df_cargado,
+            features_seleccionadas,
+            target_seleccionado
+        )
+
+        if es_valido:
+            self.features_confirmadas = features_seleccionadas
+            self.target_confirmado = target_seleccionado
+            QMessageBox.information(self, "Selección Confirmada", mensaje)
+        else:
+            QMessageBox.warning(self, "Error en Selección", mensaje)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
