@@ -3,7 +3,7 @@
 import pytest
 import pandas as pd
 import sqlite3
-from procesador_datos_rodrigo_lucas_martin.importacion import importar_datos
+from importacion import importar_datos
 
 # ==========================================
 # TEST DE ÉXITO 
