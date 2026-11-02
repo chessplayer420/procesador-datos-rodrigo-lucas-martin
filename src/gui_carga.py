@@ -11,19 +11,34 @@ from PySide6.QtWidgets import (
     QComboBox, QAbstractItemView, QGroupBox
 )
 
-from preprocesado import (
-    validar_seleccion_columnas,
-    detectar_valores_inexistentes,
-    tratar_valores_inexistentes,
-    hay_valores_inexistentes,
-    parsear_valor_constante,
-    ConjuntoVacioError,
-    separar_train_test,
-    parsear_parametros_separacion,
-    PORCENTAJE_TEST_POR_DEFECTO,
-    SEMILLA_POR_DEFECTO,
-)
-from importacion import importar_datos
+try:
+    from procesador_datos_rodrigo_lucas_martin.preprocesado import (
+        validar_seleccion_columnas,
+        detectar_valores_inexistentes,
+        tratar_valores_inexistentes,
+        hay_valores_inexistentes,
+        parsear_valor_constante,
+        ConjuntoVacioError,
+        separar_train_test,
+        parsear_parametros_separacion,
+        PORCENTAJE_TEST_POR_DEFECTO,
+        SEMILLA_POR_DEFECTO,
+    )
+    from procesador_datos_rodrigo_lucas_martin.importacion import importar_datos
+except ImportError:
+    from preprocesado import (
+        validar_seleccion_columnas,
+        detectar_valores_inexistentes,
+        tratar_valores_inexistentes,
+        hay_valores_inexistentes,
+        parsear_valor_constante,
+        ConjuntoVacioError,
+        separar_train_test,
+        parsear_parametros_separacion,
+        PORCENTAJE_TEST_POR_DEFECTO,
+        SEMILLA_POR_DEFECTO,
+    )
+    from importacion import importar_datos
 
 
 class VentanaCargaDatos(QMainWindow):
@@ -102,9 +117,6 @@ class VentanaCargaDatos(QMainWindow):
         self.mostrar_seleccion_confirmada()
 
         # -------------------------------------------------------------
-        # TAREA 2: Conexión de Lógica y Control de Errores de Preprocesado
-        # -------------------------------------------------------------
-        # -------------------------------------------------------------
         # Separación en Entrenamiento y Test
         # -------------------------------------------------------------
         group_separacion = QGroupBox("Separación en Entrenamiento y Test")
@@ -135,6 +147,9 @@ class VentanaCargaDatos(QMainWindow):
         layout_principal.addWidget(group_separacion)
         self.actualizar_porcentaje_train(self.input_porcentaje_test.text())
 
+        # -------------------------------------------------------------
+        # Tratamiento de Valores Inexistentes (NaN)
+        # -------------------------------------------------------------
         self.group_preprocesado = QGroupBox("Tratamiento de Valores Inexistentes (NaN)")
         layout_prep = QVBoxLayout()
 
@@ -212,8 +227,8 @@ class VentanaCargaDatos(QMainWindow):
             f"<b>División realizada correctamente</b> "
             f"(test: {self.porcentaje_test_usado:g} %, entrenamiento: {100 - self.porcentaje_test_usado:g} %, "
             f"semilla: {self.semilla_usada}).<br>"
-            f"• <b>Entrenamiento:</b> {n_train} filas<br>"
-            f"• <b>Test:</b> {n_test} filas"
+            f"<b>Entrenamiento:</b> {n_train} filas<br>"
+            f"<b>Test:</b> {n_test} filas"
         )
 
     def separar_datos(self):
@@ -327,7 +342,6 @@ class VentanaCargaDatos(QMainWindow):
             QMessageBox.warning(self, "Aviso", "Debes confirmar las columnas a evaluar.")
             return
 
-        # Mapeo del selector a nombres de estrategia
         estrategias_map = {
             0: "eliminar",
             1: "media",
@@ -358,7 +372,6 @@ class VentanaCargaDatos(QMainWindow):
                 valor_constante
             )
         except ConjuntoVacioError as err:
-            # No se aplica ningún cambio; el usuario puede elegir otra estrategia
             QMessageBox.warning(
                 self,
                 "Operación Cancelada",
@@ -380,9 +393,9 @@ class VentanaCargaDatos(QMainWindow):
         if estrategia == "eliminar":
             msg = (
                 "Preprocesado aplicado: se han eliminado filas con valores inexistentes.\n"
-                f"• Entrenamiento: {resumen['filas_eliminadas_train']} filas eliminadas "
+                f"Entrenamiento: {resumen['filas_eliminadas_train']} filas eliminadas "
                 f"({len(self.df_train)} restantes)\n"
-                f"• Test: {resumen['filas_eliminadas_test']} filas eliminadas "
+                f"Test: {resumen['filas_eliminadas_test']} filas eliminadas "
                 f"({len(self.df_test)} restantes)"
             )
         else:
@@ -392,8 +405,8 @@ class VentanaCargaDatos(QMainWindow):
                 con_que = f"la {estrategia} del conjunto de entrenamiento"
             msg = (
                 f"Preprocesado aplicado: valores inexistentes rellenados con {con_que}.\n"
-                f"• Entrenamiento: {resumen['valores_rellenados_train']} valores rellenados\n"
-                f"• Test: {resumen['valores_rellenados_test']} valores rellenados"
+                f"Entrenamiento: {resumen['valores_rellenados_train']} valores rellenados\n"
+                f"Test: {resumen['valores_rellenados_test']} valores rellenados"
             )
 
         QMessageBox.information(self, "Preprocesado Exitoso", msg)
@@ -453,7 +466,6 @@ class VentanaCargaDatos(QMainWindow):
         tabla.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
 
     def actualizar_selectores_columnas(self, df: pd.DataFrame):
-        # Se borra cualquier selección anterior (y los conjuntos derivados de ella)
         self.combo_target.blockSignals(True)
         self.lista_features.clear()
         self.combo_target.clear()
@@ -481,8 +493,8 @@ class VentanaCargaDatos(QMainWindow):
         salida = html.escape(self.target_confirmado)
         self.lbl_seleccion_confirmada.setText(
             f"<b>Selección confirmada:</b><br>"
-            f"• <b>Entrada (features):</b> {entradas}<br>"
-            f"• <b>Salida (target):</b> {salida}"
+            f"<b>Entrada (features):</b> {entradas}<br>"
+            f"<b>Salida (target):</b> {salida}"
         )
         self.mostrar_tabla_seleccion()
 
