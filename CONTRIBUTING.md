@@ -26,9 +26,20 @@ Usa mensajes descriptivos y un prefijo que indique el tipo de trabajo: `feat:`, 
 - Para añadir un paquete nuevo al proyecto usar **siempre**: `uv add <paquete>`.
 - El archivo `uv.lock` debe incluirse siempre en los commits.
 
-## Reglas de fusión (Merge)
-Antes de fusionar cualquier rama a dev (o dev a main), el desarrollador debe actualizar su rama con los últimos cambios de dev y ejecutar todas las pruebas en su máquina local. Solo se fusiona si todas las pruebas pasan.
+## Reglas de fusión según el resultado de GitHub Actions
 
+1. **Fusión de ramas de trabajo en `dev`:**
+   Una rama de trabajo (`feature/*`, `fix/*` o `docs/*`) **solo se fusiona en `dev`** si se cumplen ambas condiciones:
+   - Todas las pruebas automatizadas pasan en local (`uv run pytest`).
+   - Tras subir la rama a GitHub (`git push`), su última ejecución en la pestaña **Actions** de GitHub ha terminado correctamente (en verde).
+
+2. **Comprobación de `dev` tras cada fusión:**
+   - Después de cada fusión en `dev` y su correspondiente `git push origin dev`, se comprueba en la pestaña **Actions** que la ejecución sobre la rama `dev` también termina correctamente.
+   - Si la ejecución en `dev` falla, se crea inmediatamente en Taiga una tarea de corrección y se resuelve en su correspondiente rama `fix/<numero>-<descripcion>` antes de fusionar ninguna otra rama.
+
+3. **Fusión de `dev` en `main`:**
+   - La rama `dev` **solo se fusiona en `main`** si su última ejecución en GitHub Actions ha terminado correctamente.
+   
 ## Instrucciones de ejecución de pruebas
 Las pruebas automatizadas del proyecto se ejecutan desde la raíz del repositorio con el comando:
 
