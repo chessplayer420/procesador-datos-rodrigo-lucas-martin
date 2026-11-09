@@ -1,0 +1,17 @@
+{
+    "coeficientes": [
+        2414.6341463414615,
+        2439.0243902439247
+    ],
+    "intercepto": 25853.658536585484,
+    "features": [
+        "superficie",
+        "habitaciones"
+    ],
+    "target": "precio",
+    "descripcion": "Modelo de prueba para predicción de precios de viviendas",
+    "metricas": {
+        "r2_train": 0.9996239941844434,
+        "ecm_train": 2926829.268292717
+    }
+}

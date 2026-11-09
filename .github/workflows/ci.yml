@@ -1,0 +1,23 @@
+name: Integración Continua (CI)
+
+# Se ejecuta cada vez que se suben cambios (push) a cualquier rama del repositorio
+on:
+  push:
+
+jobs:
+  tests:
+    name: Ejecutar pruebas con pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Descargar el código del repositorio
+        uses: actions/checkout@v4
+
+      - name: 2. Instalar uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: 3. Instalar dependencias del proyecto (verificando uv.lock)
+        run: uv sync --locked
+
+      - name: 4. Ejecutar todas las pruebas automatizadas
+        run: uv run pytest
