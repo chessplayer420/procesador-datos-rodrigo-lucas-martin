@@ -31,7 +31,7 @@ def crear_datos_y_modelo():
         "metricas": metricas
     }
 
-    return modelo, metadatos, X_train, y_train
+    return modelo, metadatos
 
 
 def prueba_pickle(modelo, metadatos, ruta="prototipos/modelo_prueba.pkl"):
@@ -41,14 +41,12 @@ def prueba_pickle(modelo, metadatos, ruta="prototipos/modelo_prueba.pkl"):
         "metadatos": metadatos
     }
 
-    # Guardar
     with open(ruta, "wb") as f:
         pickle.dump(contenido_completo, f)
     
     tamano = os.path.getsize(ruta)
     print(f"Archivo guardado correctamente: {ruta} ({tamano} bytes)")
 
-    # Cargar
     with open(ruta, "rb") as f:
         datos_cargados = pickle.load(f)
 
@@ -59,7 +57,6 @@ def prueba_pickle(modelo, metadatos, ruta="prototipos/modelo_prueba.pkl"):
 
 def prueba_json(modelo, metadatos, ruta="prototipos/modelo_prueba.json"):
     print("--- PRUEBA CON JSON ---")
-    # Estructurar la información requerida por la aplicación
     datos_json = {
         "coeficientes": modelo.coef_.tolist(),
         "intercepto": float(modelo.intercept_),
@@ -69,18 +66,15 @@ def prueba_json(modelo, metadatos, ruta="prototipos/modelo_prueba.json"):
         "metricas": metadatos["metricas"]
     }
 
-    # Guardar
     with open(ruta, "w", encoding="utf-8") as f:
         json.dump(datos_json, f, indent=4, ensure_ascii=False)
 
     tamano = os.path.getsize(ruta)
     print(f"Archivo guardado correctamente: {ruta} ({tamano} bytes)")
 
-    # Cargar y Reconstruir
     with open(ruta, "r", encoding="utf-8") as f:
         datos_cargados = json.load(f)
 
-    # Reconstrucción del objeto modelo de regresión a partir de los datos
     modelo_reconstruido = LinearRegression()
     modelo_reconstruido.coef_ = np.array(datos_cargados["coeficientes"])
     modelo_reconstruido.intercept_ = datos_cargados["intercepto"]
@@ -90,7 +84,7 @@ def prueba_json(modelo, metadatos, ruta="prototipos/modelo_prueba.json"):
 
 
 if __name__ == "__main__":
-    modelo, metadatos, X, y = crear_datos_y_modelo()
+    modelo, metadatos = crear_datos_y_modelo()
     os.makedirs("prototipos", exist_ok=True)
     
     prueba_pickle(modelo, metadatos)
