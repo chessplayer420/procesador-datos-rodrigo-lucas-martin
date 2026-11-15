@@ -46,6 +46,7 @@ def entrenar_modelo_regresion(
         "y_pred_train": y_pred_train,
         "y_pred_test": y_pred_test,
         "formula": formula,
+        "descripcion": "",
         "metricas": {
             "r2_train": r2_train,
             "r2_test": r2_test,
@@ -82,3 +83,10 @@ def generar_formula_texto(
         partes.append(f"- {abs(intercepto_red)}")
 
     return " ".join(partes)
+
+def actualizar_descripcion_modelo(estructura_modelo: dict, nueva_descripcion: str) -> dict:
+    """Almacena o actualiza la descripción en la estructura de datos del modelo."""
+    if not isinstance(estructura_modelo, dict):
+        raise ValueError("No hay una estructura de modelo válida.")
+    estructura_modelo["descripcion"] = "" if nueva_descripcion is None else str(nueva_descripcion)
+    return estructura_modelo

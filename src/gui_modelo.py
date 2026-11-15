@@ -4,26 +4,30 @@ import numpy as np
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QMessageBox, QTableWidget, QTableWidgetItem,
-    QHeaderView, QSizePolicy
+    QHeaderView, QSizePolicy, QTextEdit
 )
 from PySide6.QtCore import Qt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-from src.modelo import entrenar_modelo_regresion
+try:
+    from src.modelo import entrenar_modelo_regresion, actualizar_descripcion_modelo
+except ImportError:
+    from modelo import entrenar_modelo_regresion, actualizar_descripcion_modelo
 
 
 class VentanaModeloRegresion(QMainWindow):
     def __init__(self, X_train, y_train, X_test, y_test):
         super().__init__()
         self.setWindowTitle("Creación y Evaluación del Modelo de Regresión Lineal")
-        self.resize(950, 750)
-        self.setMinimumSize(800, 600)
+        self.resize(950, 820)
+        self.setMinimumSize(800, 650)
 
         self.X_train = X_train
         self.y_train = y_train
         self.X_test = X_test
         self.y_test = y_test
+        self.resultado_modelo = None
 
         # Contenedor y Layout Principal
         widget_central = QWidget()
@@ -72,7 +76,20 @@ class VentanaModeloRegresion(QMainWindow):
         self.tabla_metricas.setFixedHeight(95)
         layout.addWidget(self.tabla_metricas)
 
-        # 4. Canvas de Matplotlib para el Gráfico de Ajuste (Se expande automáticamente)
+        # 4. Área de texto de varias líneas para la Descripción del Modelo (Historia #114)
+        self.lbl_descripcion = QLabel("<b>Descripción (opcional):</b>")
+        layout.addWidget(self.lbl_descripcion)
+
+        self.input_descripcion = QTextEdit()
+        self.input_descripcion.setPlaceholderText(
+            "Descripción (opcional): escribe aquí observaciones sobre el modelo, las variables o las métricas..."
+        )
+        self.input_descripcion.setFixedHeight(75)
+        self.input_descripcion.setEnabled(False)  # Deshabilitada mientras no haya ningún modelo creado o cargado
+        self.input_descripcion.textChanged.connect(self.al_cambiar_descripcion)
+        layout.addWidget(self.input_descripcion)
+
+        # 5. Canvas de Matplotlib para el Gráfico de Ajuste (Se expande automáticamente)
         self.canvas = FigureCanvas(Figure(figsize=(6, 4)))
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.canvas)
@@ -89,9 +106,35 @@ class VentanaModeloRegresion(QMainWindow):
         )
         self.btn_crear.setEnabled(requisitos_ok)
 
+    def al_cambiar_descripcion(self):
+        """Refleja cada cambio en el área de texto dentro de la estructura de datos del modelo actual."""
+        if self.resultado_modelo is not None:
+            actualizar_descripcion_modelo(
+                self.resultado_modelo,
+                self.input_descripcion.toPlainText()
+            )
+
+    def cargar_modelo(self, estructura_modelo: dict):
+        """Habilita el área de texto y carga la descripción si se restaura un modelo."""
+        self.resultado_modelo = estructura_modelo
+        descripcion = estructura_modelo.get("descripcion", "") if isinstance(estructura_modelo, dict) else ""
+        self.input_descripcion.blockSignals(True)
+        self.input_descripcion.setPlainText(descripcion)
+        self.input_descripcion.blockSignals(False)
+        self.input_descripcion.setEnabled(self.resultado_modelo is not None)
+
     def crear_modelo(self):
         try:
             res = entrenar_modelo_regresion(self.X_train, self.y_train, self.X_test, self.y_test)
+            if "descripcion" not in res:
+                res["descripcion"] = ""
+            self.resultado_modelo = res
+
+            # Al crear un nuevo modelo, el área de texto se vacía y se habilita (#114)
+            self.input_descripcion.blockSignals(True)
+            self.input_descripcion.clear()
+            self.input_descripcion.blockSignals(False)
+            self.input_descripcion.setEnabled(True)
 
             # Actualizar Texto de la Fórmula
             self.lbl_formula.setText(f"<b>Fórmula del modelo:</b> {res['formula']}")

@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QFileDialog, QTableWidget, QTableWidgetItem,
     QLineEdit, QMessageBox, QHeaderView, QLabel, QListWidget,
-    QComboBox, QAbstractItemView, QGroupBox, QSizePolicy, QScrollArea
+    QComboBox, QAbstractItemView, QGroupBox, QSizePolicy, QScrollArea,
+    QTextEdit
 )
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -29,7 +30,7 @@ try:
         SEMILLA_POR_DEFECTO,
     )
     from src.importacion import importar_datos
-    from src.modelo import entrenar_modelo_regresion
+    from src.modelo import entrenar_modelo_regresion, actualizar_descripcion_modelo
 except ImportError:
     from preprocesado import (
         validar_seleccion_columnas,
@@ -44,7 +45,7 @@ except ImportError:
         SEMILLA_POR_DEFECTO,
     )
     from importacion import importar_datos
-    from modelo import entrenar_modelo_regresion
+    from modelo import entrenar_modelo_regresion, actualizar_descripcion_modelo
 
 
 # Estilo Global Moderno (CSS / QSS)
@@ -91,14 +92,19 @@ QPushButton:disabled {
     color: #9CA3AF;
     border-color: #E5E7EB;
 }
-QLineEdit, QComboBox, QListWidget {
+QLineEdit, QComboBox, QListWidget, QTextEdit {
     background-color: #FFFFFF;
     border: 1px solid #D1D5DB;
     border-radius: 6px;
     padding: 5px 8px;
 }
-QLineEdit:focus, QComboBox:focus, QListWidget:focus {
+QLineEdit:focus, QComboBox:focus, QListWidget:focus, QTextEdit:focus {
     border-color: #2563EB;
+}
+QTextEdit:disabled {
+    background-color: #F9FAFB;
+    color: #9CA3AF;
+    border-color: #E5E7EB;
 }
 QTableWidget {
     background-color: #FFFFFF;
@@ -323,6 +329,20 @@ class VentanaCargaDatos(QMainWindow):
         self.tabla_metricas.setFixedHeight(90)
         layout_mod.addWidget(self.tabla_metricas)
 
+        # Área de texto para la descripción del modelo (Historia #114)
+        self.lbl_descripcion_modelo = QLabel("Descripción (opcional):")
+        self.lbl_descripcion_modelo.setStyleSheet("font-weight: 600; color: #374151;")
+        layout_mod.addWidget(self.lbl_descripcion_modelo)
+
+        self.input_descripcion_modelo = QTextEdit()
+        self.input_descripcion_modelo.setPlaceholderText(
+            "Descripción opcional: añade notas sobre el ajuste, las métricas o las variables del modelo..."
+        )
+        self.input_descripcion_modelo.setFixedHeight(80)
+        self.input_descripcion_modelo.setEnabled(False)
+        self.input_descripcion_modelo.textChanged.connect(self.al_cambiar_descripcion_modelo)
+        layout_mod.addWidget(self.input_descripcion_modelo)
+
         self.canvas_modelo = FigureCanvas(Figure(figsize=(7, 4.5)))
         self.canvas_modelo.setMinimumHeight(400)
         layout_mod.addWidget(self.canvas_modelo)
@@ -339,15 +359,50 @@ class VentanaCargaDatos(QMainWindow):
     def actualizar_estado_flujo(self):
         hay_seleccion = bool(self.features_confirmadas and self.target_confirmado)
         hay_separacion = self.df_train is not None and self.df_test is not None
+        hay_modelo = self.resultado_modelo is not None
         
         self.btn_separar.setEnabled(self.df_cargado is not None and hay_seleccion)
         self.group_preprocesado.setEnabled(hay_separacion)
         self.btn_crear_modelo.setEnabled(self.listo_para_crear_modelo())
+        self.input_descripcion_modelo.setEnabled(hay_modelo)
+
+    def limpiar_estado_modelo(self):
+        """Descarta el modelo actual, vacía el área de descripción y la deshabilita."""
+        self.resultado_modelo = None
+        if hasattr(self, "input_descripcion_modelo"):
+            self.input_descripcion_modelo.blockSignals(True)
+            self.input_descripcion_modelo.clear()
+            self.input_descripcion_modelo.blockSignals(False)
+            self.input_descripcion_modelo.setEnabled(False)
+        if hasattr(self, "lbl_formula"):
+            self.lbl_formula.setText("<b>Fórmula del modelo:</b> <i>(Pendiente de creación)</i>")
+        if hasattr(self, "tabla_metricas"):
+            self.tabla_metricas.clearContents()
+        if hasattr(self, "canvas_modelo"):
+            self.canvas_modelo.figure.clear()
+            self.canvas_modelo.draw()
+
+    def al_cambiar_descripcion_modelo(self):
+        """Refleja cada cambio del área de texto en la estructura de datos del modelo actual."""
+        if self.resultado_modelo is not None:
+            actualizar_descripcion_modelo(
+                self.resultado_modelo,
+                self.input_descripcion_modelo.toPlainText()
+            )
+
+    def cargar_modelo_en_interfaz(self, estructura_modelo: dict):
+        """Permite asociar un modelo cargado y mostrar su descripción en el área de texto."""
+        self.resultado_modelo = estructura_modelo
+        descripcion = estructura_modelo.get("descripcion", "") if isinstance(estructura_modelo, dict) else ""
+        self.input_descripcion_modelo.blockSignals(True)
+        self.input_descripcion_modelo.setPlainText(descripcion)
+        self.input_descripcion_modelo.blockSignals(False)
+        self.input_descripcion_modelo.setEnabled(self.resultado_modelo is not None)
 
     def invalidar_separacion(self):
         self.df_train = None
         self.df_test = None
-        self.resultado_modelo = None
+        self.limpiar_estado_modelo()
         self.lbl_resultado_separacion.setText("Pendiente: confirma la selección de columnas y pulsa «Separar datos».")
         self.actualizar_estado_flujo()
         self.actualizar_reporte_nulos()
@@ -370,7 +425,15 @@ class VentanaCargaDatos(QMainWindow):
             y_test = self.df_test[self.target_confirmado]
 
             res = entrenar_modelo_regresion(X_train, y_train, X_test, y_test)
+            if "descripcion" not in res:
+                res["descripcion"] = ""
             self.resultado_modelo = res
+
+            # Al crear un nuevo modelo, el área de texto se vacía y se habilita (#114)
+            self.input_descripcion_modelo.blockSignals(True)
+            self.input_descripcion_modelo.clear()
+            self.input_descripcion_modelo.blockSignals(False)
+            self.input_descripcion_modelo.setEnabled(True)
 
             self.lbl_formula.setText(f"<b>Fórmula del modelo:</b> {res['formula']}")
 
@@ -466,7 +529,7 @@ class VentanaCargaDatos(QMainWindow):
 
         self.df_train = df_train
         self.df_test = df_test
-        self.resultado_modelo = None
+        self.limpiar_estado_modelo()
         self.porcentaje_test_usado = pct_test
         self.semilla_usada = semilla
 
@@ -556,7 +619,7 @@ class VentanaCargaDatos(QMainWindow):
 
         self.df_train = df_train_limpio
         self.df_test = df_test_limpio
-        self.resultado_modelo = None
+        self.limpiar_estado_modelo()
 
         QMessageBox.information(self, "Preprocesado Exitoso", "Preprocesado aplicado correctamente.")
         self.mostrar_resultado_separacion()
