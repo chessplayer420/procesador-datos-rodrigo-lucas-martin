@@ -4,16 +4,26 @@ import numpy as np
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QMessageBox, QTableWidget, QTableWidgetItem,
-    QHeaderView, QSizePolicy, QTextEdit
+    QHeaderView, QSizePolicy, QTextEdit, QFileDialog
 )
 from PySide6.QtCore import Qt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 try:
-    from src.modelo import entrenar_modelo_regresion, actualizar_descripcion_modelo
+    from src.modelo import (
+        entrenar_modelo_regresion,
+        actualizar_descripcion_modelo,
+        guardar_modelo,
+        normalizar_ruta_guardado,
+    )
 except ImportError:
-    from modelo import entrenar_modelo_regresion, actualizar_descripcion_modelo
+    from modelo import (
+        entrenar_modelo_regresion,
+        actualizar_descripcion_modelo,
+        guardar_modelo,
+        normalizar_ruta_guardado,
+    )
 
 
 class VentanaModeloRegresion(QMainWindow):
@@ -36,7 +46,9 @@ class VentanaModeloRegresion(QMainWindow):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
 
-        # 1. Botón "Crear modelo"
+        # 1. Botones "Crear modelo" y "Guardar modelo"
+        layout_botones = QHBoxLayout()
+
         self.btn_crear = QPushButton("Crear modelo")
         self.btn_crear.setFixedHeight(40)
         self.btn_crear.setStyleSheet("""
@@ -56,7 +68,31 @@ class VentanaModeloRegresion(QMainWindow):
             }
         """)
         self.btn_crear.clicked.connect(self.crear_modelo)
-        layout.addWidget(self.btn_crear)
+        layout_botones.addWidget(self.btn_crear)
+
+        self.btn_guardar = QPushButton("Guardar modelo")
+        self.btn_guardar.setFixedHeight(40)
+        self.btn_guardar.setEnabled(False)  # Solo habilitado cuando hay un modelo creado o cargado
+        self.btn_guardar.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                font-weight: bold;
+                background-color: #107C41;
+                color: white;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #0B5A2E;
+            }
+            QPushButton:disabled {
+                background-color: #CCCCCC;
+                color: #666666;
+            }
+        """)
+        self.btn_guardar.clicked.connect(self.ejecutar_guardado_modelo)
+        layout_botones.addWidget(self.btn_guardar)
+
+        layout.addLayout(layout_botones)
 
         # Comprobar estado inicial del botón
         self.validar_requisitos_modelo()
@@ -76,7 +112,7 @@ class VentanaModeloRegresion(QMainWindow):
         self.tabla_metricas.setFixedHeight(95)
         layout.addWidget(self.tabla_metricas)
 
-        # 4. Área de texto de varias líneas para la Descripción del Modelo (Historia #114)
+        # 4. Área de texto de varias líneas para la Descripción del Modelo (#114)
         self.lbl_descripcion = QLabel("<b>Descripción (opcional):</b>")
         layout.addWidget(self.lbl_descripcion)
 
@@ -85,17 +121,16 @@ class VentanaModeloRegresion(QMainWindow):
             "Descripción (opcional): escribe aquí observaciones sobre el modelo, las variables o las métricas..."
         )
         self.input_descripcion.setFixedHeight(75)
-        self.input_descripcion.setEnabled(False)  # Deshabilitada mientras no haya ningún modelo creado o cargado
+        self.input_descripcion.setEnabled(False)
         self.input_descripcion.textChanged.connect(self.al_cambiar_descripcion)
         layout.addWidget(self.input_descripcion)
 
-        # 5. Canvas de Matplotlib para el Gráfico de Ajuste (Se expande automáticamente)
+        # 5. Canvas de Matplotlib para el Gráfico de Ajuste
         self.canvas = FigureCanvas(Figure(figsize=(6, 4)))
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.canvas)
 
     def validar_requisitos_modelo(self):
-        # Valida que existan los datos y que no contengan valores nulos
         requisitos_ok = bool(
             self.X_train is not None and self.y_train is not None and
             self.X_test is not None and self.y_test is not None and
@@ -107,7 +142,6 @@ class VentanaModeloRegresion(QMainWindow):
         self.btn_crear.setEnabled(requisitos_ok)
 
     def al_cambiar_descripcion(self):
-        """Refleja cada cambio en el área de texto dentro de la estructura de datos del modelo actual."""
         if self.resultado_modelo is not None:
             actualizar_descripcion_modelo(
                 self.resultado_modelo,
@@ -115,26 +149,27 @@ class VentanaModeloRegresion(QMainWindow):
             )
 
     def cargar_modelo(self, estructura_modelo: dict):
-        """Habilita el área de texto y carga la descripción si se restaura un modelo."""
         self.resultado_modelo = estructura_modelo
         descripcion = estructura_modelo.get("descripcion", "") if isinstance(estructura_modelo, dict) else ""
         self.input_descripcion.blockSignals(True)
         self.input_descripcion.setPlainText(descripcion)
         self.input_descripcion.blockSignals(False)
-        self.input_descripcion.setEnabled(self.resultado_modelo is not None)
+        hay_modelo = self.resultado_modelo is not None
+        self.input_descripcion.setEnabled(hay_modelo)
+        self.btn_guardar.setEnabled(hay_modelo)
 
     def crear_modelo(self):
         try:
             res = entrenar_modelo_regresion(self.X_train, self.y_train, self.X_test, self.y_test)
-            if "descripcion" not in res:
-                res["descripcion"] = ""
+            res.setdefault("descripcion", "")
             self.resultado_modelo = res
 
-            # Al crear un nuevo modelo, el área de texto se vacía y se habilita (#114)
+            # Al crear un nuevo modelo, vaciar descripción y habilitar descripción y guardado
             self.input_descripcion.blockSignals(True)
             self.input_descripcion.clear()
             self.input_descripcion.blockSignals(False)
             self.input_descripcion.setEnabled(True)
+            self.btn_guardar.setEnabled(True)
 
             # Actualizar Texto de la Fórmula
             self.lbl_formula.setText(f"<b>Fórmula del modelo:</b> {res['formula']}")
@@ -146,7 +181,6 @@ class VentanaModeloRegresion(QMainWindow):
             item_ecm_tr = QTableWidgetItem(f"{m['ecm_train']:.4f}")
             item_ecm_te = QTableWidgetItem(f"{m['ecm_test']:.4f}")
 
-            # Alineación centrada en las celdas
             for item in [item_r2_tr, item_r2_te, item_ecm_tr, item_ecm_te]:
                 item.setTextAlignment(Qt.AlignCenter)
 
@@ -161,6 +195,64 @@ class VentanaModeloRegresion(QMainWindow):
 
         except Exception as err:
             QMessageBox.critical(self, "Error al crear el modelo", f"Ocurrió un error inesperado:\n{str(err)}")
+
+    def ejecutar_guardado_modelo(self):
+        if self.resultado_modelo is None:
+            return
+
+        descripcion_actual = self.input_descripcion.toPlainText().strip()
+        actualizar_descripcion_modelo(self.resultado_modelo, self.input_descripcion.toPlainText())
+
+        # Aviso si la descripción está vacía (sin impedir el guardado)
+        if not descripcion_actual:
+            respuesta = QMessageBox.warning(
+                self,
+                "Descripción vacía",
+                "El modelo no tiene descripción. ¿Deseas guardar el modelo sin descripción?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if respuesta == QMessageBox.No:
+                return
+
+        ruta_elegida, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar modelo",
+            "modelo_lineal.json",
+            "Archivos JSON (*.json);;Todos los archivos (*)",
+            options=QFileDialog.DontConfirmOverwrite,
+        )
+
+        if not ruta_elegida:
+            return
+
+        ruta_final = normalizar_ruta_guardado(ruta_elegida)
+
+        # Confirmar antes de sobrescribir si el archivo ya existe
+        if ruta_final.exists():
+            confirmar = QMessageBox.question(
+                self,
+                "Confirmar sobrescritura",
+                f"El archivo «{ruta_final.name}» ya existe.\n¿Deseas sobrescribirlo?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if confirmar != QMessageBox.Yes:
+                return
+
+        try:
+            ruta_guardada = guardar_modelo(self.resultado_modelo, ruta_final)
+            QMessageBox.information(
+                self,
+                "Modelo guardado",
+                f"El modelo se ha guardado correctamente en:\n{ruta_guardada}",
+            )
+        except Exception as err:
+            QMessageBox.critical(
+                self,
+                "Error al guardar el modelo",
+                f"No se pudo guardar el archivo en la ubicación seleccionada:\n{str(err)}",
+            )
 
     def dibujar_grafico(self, y_pred_train, y_pred_test, modelo):
         fig = self.canvas.figure
