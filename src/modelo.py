@@ -1,12 +1,10 @@
 import json
 from pathlib import Path
+from typing import Dict, Any
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
-from typing import Dict, Any
-
-EXTENSION_MODELO = ".json"
 
 
 def entrenar_modelo_regresion(
@@ -16,8 +14,8 @@ def entrenar_modelo_regresion(
     y_test: pd.Series
 ) -> Dict[str, Any]:
     """
-    Entrena la regresión lineal únicamente con el conjunto de entrenamiento.
-    Calcula métricas R2 y ECM para train y test, y devuelve la fórmula formateada.
+    Entrena el modelo de regresión lineal únicamente con el conjunto de entrenamiento.
+    Calcula métricas R² y ECM (MSE) para train y test, y devuelve la fórmula formateada.
     """
     if X_train.empty or y_train.empty:
         raise ValueError("El conjunto de entrenamiento está vacío.")
@@ -28,40 +26,29 @@ def entrenar_modelo_regresion(
     if X_test.isna().sum().sum() > 0 or y_test.isna().sum() > 0:
         raise ValueError("Quedan valores inexistentes en el conjunto de test.")
 
-    # 1. Ajuste del modelo solo en TRAIN
     modelo = LinearRegression()
     modelo.fit(X_train, y_train)
 
-    # 2. Predicciones
     y_pred_train = modelo.predict(X_train)
     y_pred_test = modelo.predict(X_test)
 
-    # 3. Métricas
     r2_train = float(r2_score(y_train, y_pred_train))
     r2_test = float(r2_score(y_test, y_pred_test))
     ecm_train = float(mean_squared_error(y_train, y_pred_train))
     ecm_test = float(mean_squared_error(y_test, y_pred_test))
 
-    # 4. Texto de la fórmula y metadatos de columnas
-    features = [str(c) for c in X_train.columns.tolist()]
-    target = str(y_train.name) if y_train.name else "y"
-    coeficientes = [float(c) for c in np.ravel(modelo.coef_)]
-    intercepto = float(modelo.intercept_)
-
-    formula = generar_formula_texto(target, features, modelo.coef_, intercepto)
+    formula = generar_formula_texto(
+        y_train.name, X_train.columns.tolist(), modelo.coef_, modelo.intercept_
+    )
 
     return {
         "modelo": modelo,
-        "coeficientes": coeficientes,
-        "intercepto": intercepto,
-        "features": features,
-        "columnas_entrada": features,
-        "target": target,
-        "columna_salida": target,
         "y_pred_train": y_pred_train,
         "y_pred_test": y_pred_test,
         "formula": formula,
         "descripcion": "",
+        "features": X_train.columns.tolist(),
+        "target": str(y_train.name),
         "metricas": {
             "r2_train": r2_train,
             "r2_test": r2_test,
@@ -78,11 +65,11 @@ def generar_formula_texto(
     termino_independiente: float,
     decimales: int = 4
 ) -> str:
-    """Genera la fórmula en texto omitiendo expresiones del tipo + -."""
+    """Genera el texto de la fórmula redondeado sin expresiones tipo + -."""
     partes = [f"{nombre_salida} ="]
 
     for i, (col, coef) in enumerate(zip(nombres_entrada, coeficientes)):
-        coef_red = round(float(coef), decimales)
+        coef_red = round(coef, decimales)
         if i == 0:
             partes.append(f"{coef_red} * {col}")
         else:
@@ -91,7 +78,7 @@ def generar_formula_texto(
             else:
                 partes.append(f"- {abs(coef_red)} * {col}")
 
-    intercepto_red = round(float(termino_independiente), decimales)
+    intercepto_red = round(termino_independiente, decimales)
     if intercepto_red >= 0:
         partes.append(f"+ {intercepto_red}")
     else:
@@ -100,89 +87,80 @@ def generar_formula_texto(
     return " ".join(partes)
 
 
-def actualizar_descripcion_modelo(estructura_modelo: dict, nueva_descripcion: str) -> dict:
-    """Almacena o actualiza la descripción en la estructura de datos del modelo."""
-    if not isinstance(estructura_modelo, dict):
-        raise ValueError("No hay una estructura de modelo válida.")
-    estructura_modelo["descripcion"] = "" if nueva_descripcion is None else str(nueva_descripcion)
-    return estructura_modelo
+def actualizar_descripcion_modelo(estructura_modelo: Dict[str, Any], descripcion: str) -> None:
+    """Actualiza la descripción en la estructura del modelo."""
+    if isinstance(estructura_modelo, dict):
+        estructura_modelo["descripcion"] = descripcion
 
 
-def normalizar_ruta_guardado(ruta_archivo: str | Path) -> Path:
-    """Añade automáticamente la extensión .json si el usuario no la escribe."""
-    if not ruta_archivo or not str(ruta_archivo).strip():
-        raise ValueError("La ruta del archivo no puede estar vacía.")
-    ruta = Path(str(ruta_archivo).strip())
-    if ruta.suffix.lower() != EXTENSION_MODELO:
-        ruta = ruta.with_suffix(EXTENSION_MODELO)
-    return ruta
+def normalizar_ruta_guardado(ruta: str | Path) -> Path:
+    """Asegura que la ruta tenga extensión .json."""
+    p = Path(ruta)
+    if p.suffix.lower() != ".json":
+        p = p.with_suffix(p.suffix + ".json") if p.suffix else p.with_suffix(".json")
+    return p
 
 
-def guardar_modelo(estructura_modelo: dict, ruta_archivo: str | Path) -> str:
-    """
-    Guarda en formato JSON la información del modelo necesaria para mostrarlo y hacer
-    predicciones, sin incluir datos del dataset original ni gráficos.
-    Devuelve la ruta final del archivo guardado como cadena.
-    """
-    if not isinstance(estructura_modelo, dict) or not estructura_modelo:
-        raise ValueError("No hay ningún modelo válido para guardar.")
+def guardar_modelo(estructura_modelo: Dict[str, Any], ruta: str | Path) -> str:
+    """Guarda los parámetros, fórmula, métricas y descripción del modelo en JSON."""
+    ruta_final = normalizar_ruta_guardado(ruta)
+    modelo = estructura_modelo["modelo"]
 
-    ruta_final = normalizar_ruta_guardado(ruta_archivo)
-
-    # Extraer coeficientes e intercepto
-    if "coeficientes" in estructura_modelo and estructura_modelo["coeficientes"] is not None:
-        coeficientes = [float(c) for c in estructura_modelo["coeficientes"]]
-    elif "modelo" in estructura_modelo and hasattr(estructura_modelo["modelo"], "coef_"):
-        coeficientes = [float(c) for c in np.ravel(estructura_modelo["modelo"].coef_)]
-    else:
-        raise ValueError("El modelo no contiene coeficientes válidos.")
-
-    if "intercepto" in estructura_modelo and estructura_modelo["intercepto"] is not None:
-        intercepto = float(estructura_modelo["intercepto"])
-    elif "modelo" in estructura_modelo and hasattr(estructura_modelo["modelo"], "intercept_"):
-        intercepto = float(estructura_modelo["modelo"].intercept_)
-    else:
-        raise ValueError("El modelo no contiene término independiente válido.")
-
-    features = list(
-        estructura_modelo.get("features")
-        or estructura_modelo.get("columnas_entrada")
-        or []
-    )
-    target = str(
-        estructura_modelo.get("target")
-        or estructura_modelo.get("columna_salida")
-        or ""
-    )
-    if not features or not target:
-        raise ValueError("El modelo debe incluir los nombres de las columnas de entrada y de salida.")
-
-    formula = str(estructura_modelo.get("formula") or "")
-    if not formula:
-        formula = generar_formula_texto(target, features, np.array(coeficientes), intercepto)
-
-    metricas_raw = estructura_modelo.get("metricas") or {}
-    metricas = {
-        "r2_train": float(metricas_raw["r2_train"]),
-        "r2_test": float(metricas_raw["r2_test"]),
-        "ecm_train": float(metricas_raw["ecm_train"]),
-        "ecm_test": float(metricas_raw["ecm_test"]),
+    datos_serializados = {
+        "features": estructura_modelo.get("features", []),
+        "target": estructura_modelo.get("target", ""),
+        "coeficientes": [float(c) for c in modelo.coef_],
+        "intercepto": float(modelo.intercept_),
+        "formula": estructura_modelo.get("formula", ""),
+        "metricas": estructura_modelo.get("metricas", {}),
+        "descripcion": estructura_modelo.get("descripcion", ""),
     }
 
-    descripcion = str(estructura_modelo.get("descripcion") or "")
-
-    # Estructura documentada en la historia #20 (sin dataset ni gráficos)
-    datos_json = {
-        "coeficientes": coeficientes,
-        "intercepto": intercepto,
-        "formula": formula,
-        "features": features,
-        "target": target,
-        "descripcion": descripcion,
-        "metricas": metricas,
-    }
-
-    with open(ruta_final, "w", encoding="utf-8") as archivo:
-        json.dump(datos_json, archivo, indent=4, ensure_ascii=False)
+    ruta_final.parent.mkdir(parents=True, exist_ok=True)
+    with open(ruta_final, "w", encoding="utf-8") as f:
+        json.dump(datos_serializados, f, indent=4, ensure_ascii=False)
 
     return str(ruta_final)
+
+
+def predecir_salida(
+    modelo: LinearRegression,
+    nombres_entrada: list,
+    valores_crudos: dict[str, str],
+    decimales: int = 4
+) -> float:
+    """
+    Valida los valores de entrada (admite punto o coma decimal), realiza la predicción
+    con el modelo y devuelve el resultado redondeado al mismo número de decimales que la fórmula.
+    """
+    if modelo is None:
+        raise ValueError("No hay ningún modelo disponible para realizar la predicción.")
+
+    faltantes = []
+    no_numericos = []
+    valores_numericos = {}
+
+    for col in nombres_entrada:
+        val_str = str(valores_crudos.get(col, "")).strip()
+        if not val_str:
+            faltantes.append(col)
+            continue
+
+        val_normalizado = val_str.replace(",", ".")
+        try:
+            valores_numericos[col] = float(val_normalizado)
+        except ValueError:
+            no_numericos.append(col)
+
+    errores = []
+    if faltantes:
+        errores.append(f"Faltan valores para las variables: {', '.join(faltantes)}.")
+    if no_numericos:
+        errores.append(f"Valores no numéricos en las variables: {', '.join(no_numericos)}.")
+
+    if errores:
+        raise ValueError("\n".join(errores))
+
+    df_entrada = pd.DataFrame([valores_numericos], columns=nombres_entrada)
+    prediccion = float(modelo.predict(df_entrada)[0])
+    return round(prediccion, decimales)
