@@ -35,6 +35,7 @@ try:
         actualizar_descripcion_modelo,
         guardar_modelo,
         normalizar_ruta_guardado,
+        predecir_salida,
     )
 except ImportError:
     from preprocesado import (
@@ -55,6 +56,7 @@ except ImportError:
         actualizar_descripcion_modelo,
         guardar_modelo,
         normalizar_ruta_guardado,
+        predecir_salida,
     )
 
 
@@ -373,6 +375,37 @@ class VentanaCargaDatos(QMainWindow):
         self.group_modelo.setLayout(layout_mod)
         layout_principal.addWidget(self.group_modelo)
 
+        # -------------------------------------------------------------
+        # 6. Predicción con el Modelo (Datos Nuevos)
+        # -------------------------------------------------------------
+        self.group_prediccion = QGroupBox("6. Predicción con Datos Nuevos")
+        self.group_prediccion.setEnabled(False)
+        layout_pred = QVBoxLayout()
+
+        self.layout_campos_prediccion = QVBoxLayout()
+        layout_pred.addLayout(self.layout_campos_prediccion)
+        self.inputs_prediccion: dict[str, QLineEdit] = {}
+
+        self.btn_predecir = QPushButton("🔮 Realizar predicción")
+        self.btn_predecir.setFixedHeight(38)
+        self.btn_predecir.setStyleSheet("""
+            QPushButton { font-size: 14px; font-weight: bold; background-color: #2563EB; color: white; border: none; border-radius: 6px; }
+            QPushButton:hover { background-color: #1D4ED8; }
+            QPushButton:disabled { background-color: #E5E7EB; color: #9CA3AF; }
+        """)
+        self.btn_predecir.clicked.connect(self.ejecutar_prediccion)
+        layout_pred.addWidget(self.btn_predecir)
+
+        self.lbl_resultado_prediccion = QLabel("Resultado: (No hay modelo disponible)")
+        self.lbl_resultado_prediccion.setStyleSheet(
+            "font-size: 14px; font-weight: bold; padding: 10px; "
+            "background-color: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 6px; color: #1E3A8A;"
+        )
+        layout_pred.addWidget(self.lbl_resultado_prediccion)
+
+        self.group_prediccion.setLayout(layout_pred)
+        layout_principal.addWidget(self.group_prediccion)
+
         # Estado inicial
         self.invalidar_separacion()
 
@@ -391,7 +424,7 @@ class VentanaCargaDatos(QMainWindow):
         self.btn_guardar_modelo.setEnabled(hay_modelo)
 
     def limpiar_estado_modelo(self):
-        """Descarta el modelo actual y deshabilita la descripción y el botón de guardado."""
+        """Descarta el modelo actual y deshabilita la descripción, guardado y predicción."""
         self.resultado_modelo = None
         if hasattr(self, "input_descripcion_modelo"):
             self.input_descripcion_modelo.blockSignals(True)
@@ -407,6 +440,8 @@ class VentanaCargaDatos(QMainWindow):
         if hasattr(self, "canvas_modelo"):
             self.canvas_modelo.figure.clear()
             self.canvas_modelo.draw()
+        if hasattr(self, "group_prediccion"):
+            self.actualizar_panel_prediccion()
 
     def al_cambiar_descripcion_modelo(self):
         if self.resultado_modelo is not None:
@@ -416,7 +451,7 @@ class VentanaCargaDatos(QMainWindow):
             )
 
     def cargar_modelo_en_interfaz(self, estructura_modelo: dict):
-        """Habilita descripción y guardado cuando se carga un modelo."""
+        """Habilita descripción, guardado y predicción cuando se carga un modelo."""
         self.resultado_modelo = estructura_modelo
         descripcion = estructura_modelo.get("descripcion", "") if isinstance(estructura_modelo, dict) else ""
         self.input_descripcion_modelo.blockSignals(True)
@@ -425,6 +460,63 @@ class VentanaCargaDatos(QMainWindow):
         hay_modelo = self.resultado_modelo is not None
         self.input_descripcion_modelo.setEnabled(hay_modelo)
         self.btn_guardar_modelo.setEnabled(hay_modelo)
+        self.actualizar_panel_prediccion()
+
+    def actualizar_panel_prediccion(self):
+        """
+        Habilita la sección de predicción cuando hay un modelo disponible (creado o cargado),
+        genera dinámicamente los campos de entrada y reinicia el resultado anterior.
+        """
+        while self.layout_campos_prediccion.count():
+            item = self.layout_campos_prediccion.takeAt(0)
+            if item.layout():
+                while item.layout().count():
+                    sub = item.layout().takeAt(0)
+                    if sub.widget():
+                        sub.widget().deleteLater()
+            elif item.widget():
+                item.widget().deleteLater()
+        self.inputs_prediccion.clear()
+
+        if self.resultado_modelo is None or not isinstance(self.resultado_modelo, dict):
+            self.group_prediccion.setEnabled(False)
+            self.lbl_resultado_prediccion.setText("Resultado: (No hay modelo disponible)")
+            return
+
+        features = self.resultado_modelo.get("features") or self.features_confirmadas
+        target = self.resultado_modelo.get("target") or self.target_confirmado
+
+        for col in features:
+            fila = QHBoxLayout()
+            lbl = QLabel(f"{col}:")
+            lbl.setMinimumWidth(150)
+            lbl.setStyleSheet("font-weight: 600;")
+            campo = QLineEdit()
+            campo.setPlaceholderText(f"Introduce {col} (ej. 3.5 o 3,5)")
+            fila.addWidget(lbl)
+            fila.addWidget(campo)
+            self.layout_campos_prediccion.addLayout(fila)
+            self.inputs_prediccion[col] = campo
+
+        self.lbl_resultado_prediccion.setText(f"{target} = (Pendiente de cálculo)")
+        self.group_prediccion.setEnabled(True)
+
+    def ejecutar_prediccion(self):
+        if self.resultado_modelo is None:
+            return
+
+        modelo = self.resultado_modelo.get("modelo")
+        features = self.resultado_modelo.get("features") or self.features_confirmadas
+        target = self.resultado_modelo.get("target") or self.target_confirmado
+        valores_crudos = {col: inp.text() for col, inp in self.inputs_prediccion.items()}
+
+        try:
+            valor_predicho = predecir_salida(modelo, features, valores_crudos, decimales=4)
+            self.lbl_resultado_prediccion.setText(f"{target} = {valor_predicho}")
+        except ValueError as err:
+            QMessageBox.warning(self, "Error en los datos de entrada", str(err))
+        except Exception as err:
+            QMessageBox.critical(self, "Error al predecir", f"Ocurrió un error inesperado:\n{str(err)}")
 
     def invalidar_separacion(self):
         self.df_train = None
@@ -480,6 +572,7 @@ class VentanaCargaDatos(QMainWindow):
             self.tabla_metricas.setItem(1, 1, item_ecm_te)
 
             self.dibujar_grafico_modelo(X_train, y_train, X_test, y_test, res["y_pred_train"], res["y_pred_test"], res["modelo"])
+            self.actualizar_panel_prediccion()
             QMessageBox.information(self, "Éxito", "El modelo de regresión lineal se ha creado y evaluado correctamente.")
 
         except Exception as err:
