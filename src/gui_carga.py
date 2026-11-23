@@ -38,6 +38,7 @@ try:
         guardar_modelo,
         normalizar_ruta_guardado,
         predecir_salida,
+        ModeloInvalidoError,
     )
     try:
         from src.modelo import cargar_modelo as cargar_modelo_archivo
@@ -63,6 +64,7 @@ except ImportError:
         guardar_modelo,
         normalizar_ruta_guardado,
         predecir_salida,
+        ModeloInvalidoError,
     )
     try:
         from modelo import cargar_modelo as cargar_modelo_archivo
@@ -258,6 +260,9 @@ def formatear_error_amigable(error: Exception, accion: str) -> str:
             f"La ruta seleccionada corresponde a una carpeta y no a un archivo al {accion}.\n"
             "Selecciona un archivo válido e inténtalo de nuevo."
         )
+    if isinstance(error, ModeloInvalidoError):
+        # Mensaje ya redactado para el usuario desde modelo.cargar_modelo (Historia #115)
+        return str(error)
     if isinstance(error, json.JSONDecodeError):
         return (
             "El archivo seleccionado no tiene un formato de modelo válido o está dañado.\n"
@@ -327,6 +332,7 @@ class VentanaCargaDatos(QMainWindow):
         self.resultado_modelo = None
         self.origen_modelo: str = ""  # "creado", "cargado" o ""
         self.nombre_archivo_modelo: str = ""
+        self.ruta_archivo_modelo: str = ""  # Ruta completa del último archivo de modelo cargado/guardado (Historia #115)
         self.cambios_sin_guardar: bool = False
         self._cargando_archivo: bool = False
         self._hilo_carga: HiloCargaDataset | None = None
@@ -584,6 +590,14 @@ class VentanaCargaDatos(QMainWindow):
         self.lbl_formula.setStyleSheet("font-size: 13px; padding: 10px; background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 6px;")
         layout_mod.addWidget(self.lbl_formula)
 
+        # Columnas de entrada y de salida del modelo (Historia #115)
+        self.lbl_columnas_modelo = QLabel("")
+        self.lbl_columnas_modelo.setWordWrap(True)
+        self.lbl_columnas_modelo.setTextFormat(Qt.RichText)
+        self.lbl_columnas_modelo.setStyleSheet("font-size: 13px; padding: 6px 10px; color: #374151;")
+        self.lbl_columnas_modelo.setVisible(False)
+        layout_mod.addWidget(self.lbl_columnas_modelo)
+
         self.tabla_metricas = QTableWidget(2, 2)
         self.tabla_metricas.setHorizontalHeaderLabels(["Entrenamiento", "Test"])
         self.tabla_metricas.setVerticalHeaderLabels(["R² (Coef. Determinación)", "Error Cuadrático Medio (ECM)"])
@@ -676,6 +690,70 @@ class VentanaCargaDatos(QMainWindow):
         QMessageBox.critical(self, titulo, texto)
 
     # -------------------------------------------------------------
+    # Utilidades de la Historia #115 (cargar modelo guardado)
+    # -------------------------------------------------------------
+    def _confirmar_descartar_modelo(self) -> bool:
+        """
+        Pide confirmación antes de sustituir/descartar el modelo actual cuando
+        tiene cambios sin guardar (modelo creado sin guardar o modelo cargado
+        cuya descripción se ha modificado). Devuelve True si se puede continuar.
+        """
+        if self.resultado_modelo is None or not self.cambios_sin_guardar:
+            return True
+
+        respuesta = QMessageBox.question(
+            self,
+            "Cambios sin guardar",
+            "El modelo actual tiene cambios sin guardar y se perderán si continúas.\n"
+            "¿Deseas continuar?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        return respuesta == QMessageBox.Yes
+
+    def _mostrar_secciones_datos(self, visible: bool):
+        """
+        Muestra u oculta las secciones de trabajo con datos. El botón
+        «Cargar Dataset» (dentro del Paso 1) se mantiene siempre visible para
+        poder volver a trabajar con datos tras cargar un modelo.
+        """
+        for widget in (
+            self.tabla_datos,
+            self.lbl_info_tabla,
+            self.group_seleccion_col,
+            self.group_separacion,
+            self.group_preprocesado,
+            self.canvas_modelo,
+            self.btn_crear_modelo,
+        ):
+            widget.setVisible(visible)
+
+    def _resetear_datos(self):
+        """Descarta el dataset y todo el flujo asociado (columnas, separación, preprocesado y modelo)."""
+        self.df_cargado = None
+        self.ruta_archivo_actual = ""
+        self.input_ruta.clear()
+        self.lbl_info_tabla.setText("Sin datos cargados.")
+        self.tabla_datos.setModel(ModeloTablaDataFrame())
+        self.actualizar_selectores_columnas(None)  # También limpia el estado del modelo
+
+    def _actualizar_columnas_modelo(self):
+        """Muestra los nombres de las columnas de entrada y de salida del modelo actual."""
+        if self.resultado_modelo is None or not isinstance(self.resultado_modelo, dict):
+            self.lbl_columnas_modelo.setText("")
+            self.lbl_columnas_modelo.setVisible(False)
+            return
+
+        features = self.resultado_modelo.get("features") or self.features_confirmadas
+        target = self.resultado_modelo.get("target") or self.target_confirmado
+        entradas = ", ".join(html.escape(str(c)) for c in features)
+        self.lbl_columnas_modelo.setText(
+            f"<b>Columnas de entrada:</b> {entradas}<br>"
+            f"<b>Columna de salida:</b> {html.escape(str(target))}"
+        )
+        self.lbl_columnas_modelo.setVisible(True)
+
+    # -------------------------------------------------------------
     # Barra de estado y control global del flujo
     # -------------------------------------------------------------
     def actualizar_barra_estado(self):
@@ -741,6 +819,7 @@ class VentanaCargaDatos(QMainWindow):
         self.resultado_modelo = None
         self.origen_modelo = ""
         self.nombre_archivo_modelo = ""
+        self.ruta_archivo_modelo = ""
         self.cambios_sin_guardar = False
 
         if hasattr(self, "input_descripcion_modelo"):
@@ -752,6 +831,8 @@ class VentanaCargaDatos(QMainWindow):
             self.btn_guardar_modelo.setEnabled(False)
         if hasattr(self, "lbl_formula"):
             self.lbl_formula.setText("<b>Fórmula del modelo:</b> <i>(Pendiente de creación)</i>")
+        if hasattr(self, "lbl_columnas_modelo"):
+            self._actualizar_columnas_modelo()
         if hasattr(self, "tabla_metricas"):
             self.tabla_metricas.clearContents()
         if hasattr(self, "canvas_modelo"):
@@ -811,12 +892,20 @@ class VentanaCargaDatos(QMainWindow):
         if not ruta_seleccionada:
             return
 
+        # Historia #115: confirmar antes de sustituir un modelo con cambios sin guardar
+        if not self._confirmar_descartar_modelo():
+            return
+
         try:
             if cargar_modelo_archivo is not None:
                 estructura = cargar_modelo_archivo(ruta_seleccionada)
             else:
                 estructura = self._cargar_modelo_json_respaldo(ruta_seleccionada)
-            self.cargar_modelo_en_interfaz(estructura, nombre_archivo=Path(ruta_seleccionada).name)
+            self.cargar_modelo_en_interfaz(
+                estructura,
+                nombre_archivo=Path(ruta_seleccionada).name,
+                ruta_archivo=ruta_seleccionada,
+            )
             self.mostrar_exito(
                 "Modelo cargado",
                 f"El modelo «{Path(ruta_seleccionada).name}» se ha cargado correctamente.\n"
@@ -825,10 +914,20 @@ class VentanaCargaDatos(QMainWindow):
         except Exception as err:
             self.mostrar_error("Error al cargar el modelo", err, "cargar el modelo")
 
-    def cargar_modelo_en_interfaz(self, estructura_modelo: dict, nombre_archivo: str = ""):
+    def cargar_modelo_en_interfaz(self, estructura_modelo: dict, nombre_archivo: str = "", ruta_archivo: str = ""):
+        # Historia #115: el archivo del modelo no contiene datos, así que se descarta
+        # el dataset actual y se ocultan las secciones de trabajo con datos.
+        # Se hace ANTES de asignar el modelo porque el reseteo limpia el estado del modelo.
+        self._resetear_datos()
+        self._mostrar_secciones_datos(False)
+
+        if not nombre_archivo and ruta_archivo:
+            nombre_archivo = Path(ruta_archivo).name
+
         self.resultado_modelo = estructura_modelo
         self.origen_modelo = "cargado"
         self.nombre_archivo_modelo = nombre_archivo
+        self.ruta_archivo_modelo = ruta_archivo
         self.cambios_sin_guardar = False
 
         descripcion = estructura_modelo.get("descripcion", "") if isinstance(estructura_modelo, dict) else ""
@@ -837,6 +936,7 @@ class VentanaCargaDatos(QMainWindow):
         self.input_descripcion_modelo.blockSignals(False)
 
         self.lbl_formula.setText(f"<b>Fórmula del modelo:</b> {estructura_modelo.get('formula', '')}")
+        self._actualizar_columnas_modelo()
 
         m = estructura_modelo.get("metricas", {})
         self._rellenar_tabla_metricas(m)
@@ -958,6 +1058,7 @@ class VentanaCargaDatos(QMainWindow):
             self.resultado_modelo = res
             self.origen_modelo = "creado"
             self.nombre_archivo_modelo = ""
+            self.ruta_archivo_modelo = ""
             self.cambios_sin_guardar = True
 
             self.input_descripcion_modelo.blockSignals(True)
@@ -965,6 +1066,7 @@ class VentanaCargaDatos(QMainWindow):
             self.input_descripcion_modelo.blockSignals(False)
 
             self.lbl_formula.setText(f"<b>Fórmula del modelo:</b> {res['formula']}")
+            self._actualizar_columnas_modelo()
             self._rellenar_tabla_metricas(res["metricas"])
             self.dibujar_grafico_modelo(
                 X_train, y_train, X_test, y_test,
@@ -999,7 +1101,8 @@ class VentanaCargaDatos(QMainWindow):
             if respuesta_aviso == QMessageBox.No:
                 return
 
-        nombre_sugerido = self.nombre_archivo_modelo or "modelo_lineal.json"
+        # Historia #115: si el modelo viene de un archivo, se propone su misma carpeta y nombre
+        nombre_sugerido = self.ruta_archivo_modelo or self.nombre_archivo_modelo or "modelo_lineal.json"
         ruta_elegida, _ = QFileDialog.getSaveFileName(
             self,
             "Guardar modelo",
@@ -1027,6 +1130,7 @@ class VentanaCargaDatos(QMainWindow):
             ruta_guardada = guardar_modelo(self.resultado_modelo, ruta_final)
             self.cambios_sin_guardar = False
             self.nombre_archivo_modelo = Path(ruta_guardada).name
+            self.ruta_archivo_modelo = str(ruta_guardada)
             self.actualizar_barra_estado()
             self.mostrar_exito(
                 "Modelo guardado",
@@ -1224,6 +1328,10 @@ class VentanaCargaDatos(QMainWindow):
         if not ruta_seleccionada:
             return
 
+        # Historia #115: cargar un dataset descarta el modelo actual; confirmar si tiene cambios sin guardar
+        if not self._confirmar_descartar_modelo():
+            return
+
         ruta_absoluta = os.path.abspath(ruta_seleccionada)
         self.establecer_modo_carga(True, f"Cargando «{Path(ruta_absoluta).name}»...")
 
@@ -1234,6 +1342,9 @@ class VentanaCargaDatos(QMainWindow):
         self._hilo_carga.start()
 
     def _al_completar_carga_dataset(self, df_nuevo: pd.DataFrame, ruta_absoluta: str):
+        # Historia #115: al cargar un dataset se vuelven a mostrar las secciones de trabajo con datos
+        self._mostrar_secciones_datos(True)
+
         self.df_cargado = df_nuevo
         self.ruta_archivo_actual = ruta_absoluta
         self.input_ruta.setText(self.ruta_archivo_actual)
