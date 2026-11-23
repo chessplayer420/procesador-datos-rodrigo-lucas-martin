@@ -7,6 +7,19 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 
 
+class ModeloInvalidoError(ValueError):
+    """
+    Se lanza al cargar un archivo de modelo que está dañado, no tiene el formato
+    esperado o no contiene toda la información del modelo (Historia #115).
+    """
+
+
+# Campos que debe contener un archivo de modelo guardado por esta aplicación.
+# La descripción es opcional: si falta se interpreta como vacía.
+CLAVES_MODELO_REQUERIDAS = ("features", "target", "coeficientes", "intercepto", "formula", "metricas")
+CLAVES_METRICAS_REQUERIDAS = ("r2_train", "r2_test", "ecm_train", "ecm_test")
+
+
 def entrenar_modelo_regresion(
     X_train: pd.DataFrame,
     y_train: pd.Series,
@@ -121,6 +134,113 @@ def guardar_modelo(estructura_modelo: Dict[str, Any], ruta: str | Path) -> str:
         json.dump(datos_serializados, f, indent=4, ensure_ascii=False)
 
     return str(ruta_final)
+
+
+def _es_numero(valor: Any) -> bool:
+    """True si el valor es un número JSON (int o float), excluyendo booleanos."""
+    return isinstance(valor, (int, float)) and not isinstance(valor, bool)
+
+
+def cargar_modelo(ruta: str | Path) -> Dict[str, Any]:
+    """
+    Carga un modelo guardado previamente con `guardar_modelo` y devuelve la misma
+    estructura que produce `entrenar_modelo_regresion` (sin las predicciones, que
+    no se almacenan): modelo listo para predecir, fórmula, descripción, columnas
+    de entrada, columna de salida y métricas.
+
+    Es independiente de la interfaz gráfica. Funciona con rutas en cualquier
+    carpeta (incluidas las que tengan espacios, tildes o la letra ñ).
+
+    Errores:
+      - FileNotFoundError / PermissionError / IsADirectoryError: problemas de acceso al archivo.
+      - ModeloInvalidoError (subclase de ValueError): archivo dañado, con formato
+        distinto al esperado o al que le falta información del modelo.
+    """
+    ruta_archivo = Path(ruta)
+
+    try:
+        # utf-8-sig tolera archivos con y sin marca BOM (p. ej. editados con el Bloc de notas)
+        with open(ruta_archivo, "r", encoding="utf-8-sig") as archivo:
+            datos = json.load(archivo)
+    except (json.JSONDecodeError, UnicodeDecodeError) as err:
+        raise ModeloInvalidoError(
+            "El archivo seleccionado no tiene un formato de modelo válido o está dañado.\n"
+            "Asegúrate de elegir un archivo .json guardado desde esta aplicación."
+        ) from err
+
+    if not isinstance(datos, dict):
+        raise ModeloInvalidoError(
+            "El archivo seleccionado no tiene el formato de un modelo guardado por esta aplicación."
+        )
+
+    faltantes = [clave for clave in CLAVES_MODELO_REQUERIDAS if clave not in datos]
+    if faltantes:
+        raise ModeloInvalidoError(
+            "Al archivo le falta información del modelo "
+            f"({', '.join(faltantes)}), por lo que no se puede cargar."
+        )
+
+    features = datos["features"]
+    if not isinstance(features, list) or not features or not all(isinstance(c, str) for c in features):
+        raise ModeloInvalidoError("Las columnas de entrada guardadas en el archivo no son válidas.")
+
+    target = datos["target"]
+    if not isinstance(target, str) or not target:
+        raise ModeloInvalidoError("La columna de salida guardada en el archivo no es válida.")
+
+    coeficientes = datos["coeficientes"]
+    if (
+        not isinstance(coeficientes, list)
+        or len(coeficientes) != len(features)
+        or not all(_es_numero(c) for c in coeficientes)
+    ):
+        raise ModeloInvalidoError(
+            "Los coeficientes guardados en el archivo no son válidos o no coinciden "
+            "con las columnas de entrada."
+        )
+
+    intercepto = datos["intercepto"]
+    if not _es_numero(intercepto):
+        raise ModeloInvalidoError("El término independiente guardado en el archivo no es válido.")
+
+    formula = datos["formula"]
+    if not isinstance(formula, str):
+        raise ModeloInvalidoError("La fórmula guardada en el archivo no es válida.")
+
+    metricas = datos["metricas"]
+    if not isinstance(metricas, dict):
+        raise ModeloInvalidoError("Las métricas guardadas en el archivo no son válidas.")
+    metricas_faltantes = [c for c in CLAVES_METRICAS_REQUERIDAS if c not in metricas]
+    if metricas_faltantes:
+        raise ModeloInvalidoError(
+            "A las métricas del archivo les falta información "
+            f"({', '.join(metricas_faltantes)}), por lo que no se puede cargar el modelo."
+        )
+    if not all(_es_numero(metricas[c]) for c in CLAVES_METRICAS_REQUERIDAS):
+        raise ModeloInvalidoError("Las métricas guardadas en el archivo no son numéricas.")
+
+    descripcion = datos.get("descripcion", "")
+    if descripcion is None:
+        descripcion = ""
+    if not isinstance(descripcion, str):
+        raise ModeloInvalidoError("La descripción guardada en el archivo no es válida.")
+
+    modelo = LinearRegression()
+    modelo.coef_ = np.array(coeficientes, dtype=float)
+    modelo.intercept_ = float(intercepto)
+    modelo.n_features_in_ = len(features)
+    modelo.feature_names_in_ = np.array(features, dtype=object)
+
+    return {
+        "modelo": modelo,
+        "formula": formula,
+        "descripcion": descripcion,
+        "features": list(features),
+        "target": target,
+        "metricas": dict(metricas),
+        "coeficientes": [float(c) for c in coeficientes],
+        "intercepto": float(intercepto),
+    }
 
 
 def predecir_salida(
